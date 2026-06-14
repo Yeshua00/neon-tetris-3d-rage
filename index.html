@@ -10,10 +10,10 @@
         .stat { margin-bottom: 10px; font-size: 18px; }
         #rage-container { width: 200px; height: 15px; border: 2px solid #0ff; box-shadow: 0 0 10px #0ff; position: relative; overflow: hidden; }
         #rage-fill { width: 0%; height: 100%; background: #f0f; box-shadow: 0 0 20px #f0f; transition: width 0.2s; }
-        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.8); z-index: 1000; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.8); z-index: 200; }
         .menu-card { border: 2px solid #0ff; padding: 40px; background: #000; box-shadow: 0 0 20px #0ff; text-align: center; }
         h1 { font-size: 48px; margin: 0 0 20px 0; color: #f0f; text-shadow: 0 0 20px #f0f; }
-        .btn { pointer-events: auto; background: transparent; border: 2px solid #0ff; color: #0ff; padding: 15px 30px; font-size: 20px; cursor: pointer; font-family: inherit; transition: all 0.3s; margin: 10px; }
+        .btn { pointer-events: auto; background: transparent; border: 2px solid #0ff; color: #0ff; padding: 15px 30px; font-size: 20px; cursor: pointer; font-family: inherit; transition: all 0.3s; margin-top: 20px; }
         .btn:hover { background: #0ff; color: #000; box-shadow: 0 0 30px #0ff; }
         #glitch-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 999; display: none; background: rgba(255, 0, 255, 0.1); }
     </style>
@@ -100,7 +100,10 @@
             for(let y=0; y<GRID_H; y++) {
                 grid[y] = [];
                 for(let x=0; x<GRID_W; x++) {
-                    grid[y][x] = new Array(GRID_D).fill(null);
+                    grid[y][x] = [];
+                    for(let z=0; z<GRID_D; z++) {
+                        grid[y][x][z] = null;
+                    }
                 }
             }
 
@@ -114,10 +117,9 @@
         function spawnPiece() {
             const type = SHAPES[Math.floor(Math.random() * SHAPES.length)];
             currentPiece = {
-                blocks: type.pos.map(p => ({ x: p[0], y: Math.floor(GRID_H/2) - 1, z: p[2] })),
+                blocks: type.pos.map(p => ({ x: p[0], y: p[1], z: p[2] })),
                 meshGroup: new THREE.Group(),
-                color: type.color,
-                pos: { x: 0, y: Math.floor(GRID_H/2) - 1, z: 0 }
+                color: type.color
             };
 
             currentPiece.blocks.forEach(b => {
@@ -143,28 +145,30 @@
 
         function checkCollision(dx, dy, dz, blocks = currentPiece.blocks) {
             for (let b of blocks) {
-                const nx = b.x + dx + Math.floor(GRID_W/2);
-                const ny = b.y + dy + Math.floor(GRID_H/2);
-                const nz = b.z + dz + Math.floor(GRID_D/2);
+                const nx = Math.floor(b.x + dx + GRID_W/2);
+                const ny = Math.floor(b.y + dy + GRID_H/2);
+                const nz = Math.floor(b.z + dz + GRID_D/2);
 
                 if (nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H || nz < 0 || nz >= GRID_D) return true;
-                if (grid[ny][nx][nz]) return true;
+                if (grid[ny] && grid[ny][nx] && grid[ny][nx][nz]) return true;
             }
             return false;
         }
 
         function lockPiece() {
             currentPiece.blocks.forEach(b => {
-                const nx = b.x + Math.floor(GRID_W/2);
-                const ny = b.y + Math.floor(GRID_H/2);
-                const nz = b.z + Math.floor(GRID_D/2);
+                const nx = Math.floor(b.x + GRID_W/2);
+                const ny = Math.floor(b.y + GRID_H/2);
+                const nz = Math.floor(b.z + GRID_D/2);
                 
-                const boxGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
-                const mat = new THREE.MeshPhongMaterial({ color: currentPiece.color, emissive: currentPiece.color, emissiveIntensity: 0.3 });
-                const mesh = new THREE.Mesh(boxGeo, mat);
-                mesh.position.set(b.x, b.y, b.z);
-                scene.add(mesh);
-                grid[ny][nx][nz] = mesh;
+                if (ny >= 0 && ny < GRID_H && nx >= 0 && nx < GRID_W && nz >= 0 && nz < GRID_D) {
+                    const boxGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+                    const mat = new THREE.MeshPhongMaterial({ color: currentPiece.color, emissive: currentPiece.color, emissiveIntensity: 0.3 });
+                    const mesh = new THREE.Mesh(boxGeo, mat);
+                    mesh.position.set(b.x, b.y, b.z);
+                    scene.add(mesh);
+                    grid[ny][nx][nz] = mesh;
+                }
             });
             scene.remove(currentPiece.meshGroup);
             checkLines();
@@ -191,16 +195,20 @@
                             grid[y][x][z] = null;
                         }
                     }
-                    // Shift down logic (simplified)
-                    for (let sy = y + 1; sy < GRID_H; sy++) {
+                    // Shift down logic
+                    for (let sy = y; sy < GRID_H - 1; sy++) {
                         for (let sx = 0; sx < GRID_W; sx++) {
                             for (let sz = 0; sz < GRID_D; sz++) {
+                                grid[sy][sx][sz] = grid[sy + 1][sx][sz];
                                 if (grid[sy][sx][sz]) {
                                     grid[sy][sx][sz].position.y -= 1;
-                                    grid[sy - 1][sx][sz] = grid[sy][sx][sz];
-                                    grid[sy][sx][sz] = null;
                                 }
                             }
+                        }
+                    }
+                    for (let x = 0; x < GRID_W; x++) {
+                        for (let z = 0; z < GRID_D; z++) {
+                            grid[GRID_H - 1][x][z] = null;
                         }
                     }
                     y--;
