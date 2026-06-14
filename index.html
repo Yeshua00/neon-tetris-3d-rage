@@ -10,12 +10,14 @@
         .stat { margin-bottom: 10px; font-size: 18px; }
         #rage-container { width: 200px; height: 15px; border: 2px solid #0ff; box-shadow: 0 0 10px #0ff; position: relative; overflow: hidden; }
         #rage-fill { width: 0%; height: 100%; background: #f0f; box-shadow: 0 0 20px #f0f; transition: width 0.2s; }
-        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.8); z-index: 200; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.8); z-index: 1000; }
         .menu-card { border: 2px solid #0ff; padding: 40px; background: #000; box-shadow: 0 0 20px #0ff; text-align: center; }
         h1 { font-size: 48px; margin: 0 0 20px 0; color: #f0f; text-shadow: 0 0 20px #f0f; }
-        .btn { pointer-events: auto; background: transparent; border: 2px solid #0ff; color: #0ff; padding: 15px 30px; font-size: 20px; cursor: pointer; font-family: inherit; transition: all 0.3s; margin-top: 20px; }
+        .btn { pointer-events: auto; background: transparent; border: 2px solid #0ff; color: #0ff; padding: 15px 30px; font-size: 20px; cursor: pointer; font-family: inherit; transition: all 0.3s; margin: 10px; }
         .btn:hover { background: #0ff; color: #000; box-shadow: 0 0 30px #0ff; }
         #glitch-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 999; display: none; background: rgba(255, 0, 255, 0.1); }
+        #controls-info { position: absolute; bottom: 20px; right: 20px; z-index: 100; pointer-events: none; text-shadow: 0 0 5px #0ff; font-size: 14px; text-align: right; }
+        .control-line { margin-bottom: 8px; }
     </style>
 </head>
 <body>
@@ -27,10 +29,16 @@
         <div id="rage-container"><div id="rage-fill"></div></div>
     </div>
 
+    <div id="controls-info">
+        <div class="control-line">TILT: Move XZ</div>
+        <div class="control-line">TAP: Rotate</div>
+        <div class="control-line">← →: Rotate View</div>
+    </div>
+
     <div id="overlay">
         <div class="menu-card">
             <h1>NEON TETRIS 3D</h1>
-            <p>USE TILT TO MOVE | TAP TO ROTATE</p>
+            <p>TILT TO MOVE | TAP TO ROTATE | ARROWS TO ROTATE VIEW</p>
             <button class="btn" id="start-btn">INITIALIZE SYSTEM</button>
         </div>
     </div>
@@ -71,6 +79,11 @@
         let dropInterval = 1000;
         let tiltX = 0;
         let tiltZ = 0;
+        let viewRotation = 0; // 0, 90, 180, 270 degrees
+        let lastMoveTime = 0;
+        const MOVE_DELAY = 100; // ms between tilt moves
+        const TILT_THRESHOLD = 15; // degrees
+        const TILT_SENSITIVITY = 0.3; // movement per degree
 
         // --- INITIALIZATION ---
         function init() {
@@ -93,8 +106,7 @@
             const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x00ffff }));
             scene.add(line);
 
-            camera.position.set(0, 5, 25);
-            camera.lookAt(0, 0, 0);
+            updateCameraPosition();
 
             // Initialize internal grid
             for(let y=0; y<GRID_H; y++) {
@@ -110,8 +122,16 @@
             clock = new THREE.Clock();
             window.addEventListener('resize', onResize);
             document.addEventListener('touchstart', handleRotate);
+            window.addEventListener('keydown', handleKeyPress);
             
             animate();
+        }
+
+        function updateCameraPosition() {
+            const distance = 25;
+            const angle = (viewRotation * Math.PI) / 180;
+            camera.position.set(Math.sin(angle) * distance, 5, Math.cos(angle) * distance);
+            camera.lookAt(0, 0, 0);
         }
 
         function spawnPiece() {
@@ -145,10 +165,11 @@
 
         function checkCollision(dx, dy, dz, blocks = currentPiece.blocks) {
             for (let b of blocks) {
-                const nx = Math.floor(b.x + dx + GRID_W/2);
-                const ny = Math.floor(b.y + dy + GRID_H/2);
-                const nz = Math.floor(b.z + dz + GRID_D/2);
+                const nx = Math.round(b.x + dx + GRID_W/2);
+                const ny = Math.round(b.y + dy + GRID_H/2);
+                const nz = Math.round(b.z + dz + GRID_D/2);
 
+                // Boundary checks
                 if (nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H || nz < 0 || nz >= GRID_D) return true;
                 if (grid[ny] && grid[ny][nx] && grid[ny][nx][nz]) return true;
             }
@@ -157,9 +178,9 @@
 
         function lockPiece() {
             currentPiece.blocks.forEach(b => {
-                const nx = Math.floor(b.x + GRID_W/2);
-                const ny = Math.floor(b.y + GRID_H/2);
-                const nz = Math.floor(b.z + GRID_D/2);
+                const nx = Math.round(b.x + GRID_W/2);
+                const ny = Math.round(b.y + GRID_H/2);
+                const nz = Math.round(b.z + GRID_D/2);
                 
                 if (ny >= 0 && ny < GRID_H && nx >= 0 && nx < GRID_W && nz >= 0 && nz < GRID_D) {
                     const boxGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
@@ -269,6 +290,17 @@
             }
         }
 
+        function handleKeyPress(e) {
+            if (!gameActive) return;
+            if (e.key === 'ArrowLeft') {
+                viewRotation = (viewRotation - 90 + 360) % 360;
+                updateCameraPosition();
+            } else if (e.key === 'ArrowRight') {
+                viewRotation = (viewRotation + 90) % 360;
+                updateCameraPosition();
+            }
+        }
+
         function onResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
@@ -301,16 +333,38 @@
                 dropCounter = 0;
             }
 
-            // Tilt Controls
-            if (Math.abs(tiltX) > 10) movePiece(tiltX > 0 ? 1 : -1, 0);
-            if (Math.abs(tiltZ) > 10) movePiece(0, tiltZ > 0 ? 1 : -1);
+            // Tilt Controls with improved sensitivity and timing
+            const now = Date.now();
+            if (now - lastMoveTime > MOVE_DELAY) {
+                let moved = false;
+
+                // X-axis tilt (left/right)
+                if (tiltX > TILT_THRESHOLD) {
+                    movePiece(1, 0);
+                    moved = true;
+                } else if (tiltX < -TILT_THRESHOLD) {
+                    movePiece(-1, 0);
+                    moved = true;
+                }
+
+                // Z-axis tilt (forward/back)
+                if (tiltZ > TILT_THRESHOLD) {
+                    movePiece(0, 1);
+                    moved = true;
+                } else if (tiltZ < -TILT_THRESHOLD) {
+                    movePiece(0, -1);
+                    moved = true;
+                }
+
+                if (moved) {
+                    lastMoveTime = now;
+                }
+            }
 
             // Rage Glitch Visuals
             if (isRaging) {
-                camera.position.x = (Math.random() - 0.5) * 2;
-                camera.shake = Math.random() * 0.5;
-            } else {
-                camera.position.x = 0;
+                camera.position.x += (Math.random() - 0.5) * 0.5;
+                camera.position.z += (Math.random() - 0.5) * 0.5;
             }
 
             renderer.render(scene, camera);
@@ -322,14 +376,14 @@
                 const res = await DeviceOrientationEvent.requestPermission();
                 if (res === 'granted') {
                     window.addEventListener('deviceorientation', (e) => {
-                        tiltX = e.gamma;
-                        tiltZ = e.beta - 45;
+                        tiltX = e.gamma || 0;  // Left-right (-90 to 90)
+                        tiltZ = (e.beta || 0) - 45;  // Forward-back (-180 to 180, adjusted)
                     });
                 }
             } else {
                 window.addEventListener('deviceorientation', (e) => {
-                    tiltX = e.gamma;
-                    tiltZ = e.beta - 45;
+                    tiltX = e.gamma || 0;
+                    tiltZ = (e.beta || 0) - 45;
                 });
             }
             
